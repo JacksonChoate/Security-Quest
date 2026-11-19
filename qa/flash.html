@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<base href="../">
+<link rel="stylesheet" href="style.css">
+<script>
+window.QA=[];window.QAERR=[];
+window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno+(e.error&&e.error.stack?' :: '+e.error.stack.split('\n').slice(1,4).map(s=>s.trim()).join(' | '):'')));
+window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
+const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,3).join(' | '):String(x)).join(' '));_ce.apply(console,a)};
+if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="position:fixed;inset:0 0 auto;z-index:99;margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
+try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:true}))}catch(e){}
+</script>
+</head><body>
+<div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script src="js/questions.js"></script><script src="js/objectives.js"></script>
+<script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
+<script src="js/pbq.js"></script><script src="js/sims.js"></script>
+<script src="js/state.js"></script><script src="js/audio.js"></script><script src="js/themes.js"></script><script src="js/ui.js"></script><script src="js/fx.js"></script><script src="js/bosses.js"></script><script src="js/minions.js"></script>
+<script src="js/scenes/boot.js"></script><script src="js/scenes/world.js"></script><script src="js/scenes/battle.js"></script><script src="js/scenes/packet.js"></script>
+<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/main.js"></script>
+<script>
+// ---- Flashcards (multiple choice) test ----
+const log=(...a)=>QA.push(a.join(' '));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const P=()=>document.getElementById('panel');
+const res=(ok,tag,extra)=>log(`${ok?'PASS':'FAIL'} ${tag}${extra?': '+extra:''}`);
+const key=k=>UI.keyHandler&&UI.keyHandler({key:k,preventDefault(){}});
+async function run(){
+  for(let i=0;i<60&&!App.mode;i++)await wait(250);
+  if(App.mode==='handle'){await wait(400);const inp=document.getElementById('hsInput');inp.value='qa_tester';document.getElementById('hsForm').requestSubmit();await wait(600)}
+  if(UI._modal)UI._modal();await wait(300);
+
+  // 1. Question generation across every card in every category
+  const cards=Modes.flashCards('all'),fronts={},backs={};
+  cards.forEach(c=>{(fronts[c.t]=fronts[c.t]||new Set()).add(c.f);(backs[c.t]=backs[c.t]||new Set()).add(c.b)});
+  let n=0,bad=[],rev=0;
+  for(let round=0;round<4;round++)for(const c of cards){
+    const q=Modes.flashQuestion(c);n++;if(q.rev)rev++;
+    const texts=q.opts.map(o=>o.text),right=q.rev?c.f:c.b,pool=q.rev?fronts[c.t]:backs[c.t];
+    const okCount=q.opts.filter(o=>o.ok).length;
+    if(q.opts.length!==3)bad.push(c.k+' has '+q.opts.length+' choices');
+    else if(new Set(texts.map(t=>t.toLowerCase())).size!==3)bad.push(c.k+' duplicate choices '+texts.join(' / '));
+    else if(okCount!==1||q.opts[q.ans].text!==right)bad.push(c.k+' correct answer wrong or missing');
+    else if(q.opts.some(o=>!pool.has(o.text)))bad.push(c.k+' choice from another category: '+texts.join(' / '));
+    else if(q.opts.some(o=>!o.ok&&o.text.toLowerCase()===right.toLowerCase()))bad.push(c.k+' wrong answer equals right answer');
+  }
+  res(!bad.length,'every question has 3 distinct same-category choices with exactly one correct',n+' questions'+(bad.length?' :: '+bad.slice(0,5).join(' || '):''));
+  const rr=rev/n;res(rr>.18&&rr<.42,'reverse cards mixed in',Math.round(rr*100)+'% reverse');
+
+  // 2. Wrong answers vary and never repeat back to back
+  let repeatsBackToBack=0,lowVariety=[];
+  for(const c of shuffle(cards).slice(0,40)){
+    const sigs=[];let prev='';
+    for(let k=0;k<12;k++){const q=Modes.flashQuestion(c);const s=(q.rev?'R:':'F:')+q.opts.filter(o=>!o.ok).map(o=>o.text).sort().join('|');if(s===prev)repeatsBackToBack++;prev=s;sigs.push(s)}
+    if(new Set(sigs).size<4)lowVariety.push(c.k+'='+new Set(sigs).size);
+  }
+  res(repeatsBackToBack===0,'the same wrong pair never repeats twice in a row',repeatsBackToBack+' back-to-back repeats');
+  res(lowVariety.length<=2,'wrong answers vary between appearances',lowVariety.length?'low variety: '+lowVariety.join(', '):'40 cards x 12 draws');
+
+  // 3. Plausibility spot checks: secure/insecure twins and look-alike acronyms
+  const twin=(port,word)=>{const c=cards.find(x=>x.f==='Port '+port);let hit=0,fw=0;for(let k=0;k<60;k++){const q=Modes.flashQuestion(c);if(q.rev)continue;fw++;if(q.opts.some(o=>!o.ok&&o.text.toUpperCase().includes(word)))hit++}return fw?hit/fw:0};
+  const imaps=twin('993','IMAP'),pop3s=twin('995','POP3'),ldaps=twin('636','LDAP');
+  res(imaps>.5&&pop3s>.5&&ldaps>.5,'secure/insecure twins appear as distractors','IMAPS->IMAP '+Math.round(imaps*100)+'%, POP3S->POP3 '+Math.round(pop3s*100)+'%, LDAPS->LDAP '+Math.round(ldaps*100)+'%');
+  const siem=cards.find(x=>x.f==='SIEM');let same=0,tot=0;
+  for(let k=0;k<60;k++){const q=Modes.flashQuestion(siem);if(!q.rev)continue;q.opts.filter(o=>!o.ok).forEach(o=>{tot++;if(o.text[0]==='S')same++})}
+  res(tot===0||same/tot>.5,'reverse acronym distractors look alike (same first letter)',tot?Math.round(100*same/tot)+'% start with S':'no reverse draws');
+
+  // 4. Playing a round in the UI: keys 1-3, highlight, explanation, Enter / [ next ], spaced repetition
+  App.go('flash','all');await wait(300);
+  let flowBad=[],wrongSeen=0,rightSeen=0,requeue=0,overflow=0;
+  for(let step=0;step<60&&Modes.FC.i<Modes.FC.cards.length;step++){
+    const F=Modes.FC,c=F.cards[F.i],q=c.q;
+    const btns=P().querySelectorAll('[data-fc]');
+    if(btns.length!==3){flowBad.push('card '+F.i+' shows '+btns.length+' choices');break}
+    const wantWrong=step%3===0,idx=wantWrong?q.opts.findIndex(o=>!o.ok):q.ans,len=F.cards.length,againBefore=c.again;
+    key(String(idx+1));await wait(30);
+    const corr=P().querySelectorAll('.opt.correct'),wr=P().querySelectorAll('.opt.wrong'),fb=P().querySelector('.fcfb'),nx=P().querySelector('#fcNext');
+    if(corr.length!==1)flowBad.push('step '+step+': '+corr.length+' green answers');
+    if(wantWrong&&wr.length!==1)flowBad.push('step '+step+': wrong pick not red');
+    if(!wantWrong&&wr.length)flowBad.push('step '+step+': red shown on a right answer');
+    if(!fb||!/=/.test(fb.textContent))flowBad.push('step '+step+': no explanation line');
+    if(!nx)flowBad.push('step '+step+': no [ next ] button');
+    const srs=S.srs[c.k];
+    if(wantWrong){wrongSeen++;if(!srs||srs.b!==0||srs.due-Date.now()>2*60e3)flowBad.push('step '+step+': wrong answer did not reset to the 1-minute box');if(againBefore<2&&F.cards.length===len+1)requeue++}
+    else{rightSeen++;if(!srs||srs.b<1)flowBad.push('step '+step+': right answer did not move the card up')}
+    if(P().scrollHeight>P().clientHeight+4)overflow++;
+    key('1');await wait(10);if(F.cards[F.i]!==c||c.q.pick!==idx)flowBad.push('step '+step+': a key pressed after answering changed the result');
+    if(step%2)key('Enter');else nx.click();await wait(30);
+  }
+  res(!flowBad.length,'answer with keys, green/red highlight, explanation, next',rightSeen+' right, '+wrongSeen+' wrong'+(flowBad.length?' :: '+flowBad.slice(0,5).join(' || '):''));
+  res(requeue>0,'missed cards are re-queued later in the round',requeue+' re-queued');
+  res(!!P().querySelector('.result')&&/deck complete/.test(P().textContent),'round ends on the deck-complete screen');
+  res(overflow===0,'flashcard screen fits the window at '+innerWidth+'x'+innerHeight,overflow+' cards overflowed');
+  key('Enter');await wait(200);res(Modes.FC.i===0&&P().querySelectorAll('[data-fc]').length===3,'Enter on the end screen starts the next round');
+
+  // 5. Leaving mid-card returns to the map cleanly
+  Modes.flashAnswer(0);document.querySelector('#hud button').click();await wait(800);
+  res(App.mode==='world'&&App.game.scene.getScene('World').sys.isActive(),'leaving flashcards returns to the map');
+  document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>');
+}
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QA.push('HARNESS '+e.message+' '+e.stack);document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>')}),500));
+</script>
+</body></html>

@@ -81,7 +81,7 @@ async function run(){
   App.go('blitz','acr');await wait(400);await leave();await check('blitz');
   App.go('exam');await wait(200);Modes.examStart('quick');await wait(600);Modes.exAns(0);await leave();await check('quick quiz');
   App.go('lab');await wait(300);await leave();await check('pbq lab');
-  App.go('flash','all');await wait(200);Modes.flashFlip();await leave();await check('flashcards');
+  App.go('flash','all');await wait(200);Modes.flashAnswer(0);await leave();await check('flashcards');
   for(const m of ['heat','codex','profile','plan','story'])  {App.go(m);await wait(250);await leave();await check(m)}
   App.go('handle',{change:true});await wait(400);await leave();await check('handle change');
   // 9. Battle -> another battle -> map (back-to-back starts)

@@ -89,7 +89,7 @@ async function run(){
   for(let i=0;i<Modes.EX.items.length;i++){Modes.exGo(i);await wait(15);if(Modes.EX.items[i].k==='q')Modes.exAns(0);else{for(let k=0;k<12;k++){if(!(await step()))break;await wait(15)}}}
   Modes.exReview();overflow('full-review');Modes.submitExam();await wait(300);log('exam history n='+S.exams.length+' kinds='+S.exams.map(e=>e.kind).join(','));
   App.go('lab');await wait(200);await drive('pbqlab',300,'.result');
-  App.go('flash','all');await wait(200);for(let i=0;i<24;i++){Modes.flashFlip();Modes.flashGrade(i%3!==0);await wait(20)}overflow('flash');
+  App.go('flash','all');await wait(200);for(let i=0;i<24;i++){Modes.flashAnswer(i%3);await wait(20);overflow('flash-answered');Modes.flashNext();await wait(20)}overflow('flash');
   App.go('heat');await wait(200);overflow('heat');
   for(const t of ['acr','port','q','star','miss','pbq']){Modes.CX.tab=t;App.go('codex');await wait(350);overflow('codex-'+t)}
   App.go('profile');await wait(200);log('profile scroll height='+P().scrollHeight+' client='+P().clientHeight+' hint='+(document.getElementById('moreHint')?.className||'none'));

@@ -99,8 +99,12 @@ const Modes={
     App.go('battle',{kind:'obj',ids,label:`obj ${o} drill`,sub:OBJ_NAME[o]});
   },
 
-  // ---------- Flashcards (acronyms, ports, key terms) with spaced repetition ----------
+  // ---------- Flashcards: multiple choice (acronyms, ports, key terms) with spaced repetition ----------
+  // Each card shows a front and 3 choices from the same category: 1 correct, 2 plausible wrong answers.
+  // About 30% of cards are reverse (show the meaning, pick the acronym, port or term).
+  // Results feed spaced repetition like the old "I knew it / I didn't" buttons: wrong answers come back sooner.
   FLASH_DECKS:{all:'All',acr:'Acronyms',port:'Ports',term:'Key terms'},
+  FLASH_REVERSE:.3,
   flashCards(deck){
     const c=[];
     if(deck==='all'||deck==='acr')ACR.forEach(([a,b])=>c.push({k:'a:'+a,f:a,b,t:'acronym'}));
@@ -108,45 +112,107 @@ const Modes={
     if(deck==='all'||deck==='term')TERMS.forEach(([a,b])=>c.push({k:'t:'+a,f:a,b,t:'key term'}));
     return c;
   },
+  // Every [front, back] pair in a category. Wrong answers always come from the card's own category.
+  flashPool(t){return t==='acronym'?ACR.map(([a,b])=>[a,b]):t==='port'?PORTS.map(([p,n])=>['Port '+p,n]):TERMS.map(([a,b])=>[a,b])},
+  flashWords(s){
+    const stop=new Set(['the','and','for','with','that','from','into','are','its','not','all','any','one','you','your']);
+    return new Set(String(s).toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w.length>2&&!stop.has(w)));
+  },
+  // How plausible a wrong answer is for this card (higher = trickier). rev = the choices are fronts, not backs.
+  flashSim(c,cand,rev){
+    const shared=(a,b)=>{const A=Modes.flashWords(a);let n=0;Modes.flashWords(b).forEach(w=>{if(A.has(w))n++});return n};
+    let s=shared(c.b,cand[1])*2;
+    if(c.t==='acronym'){
+      const a=c.f.toUpperCase(),b=cand[0].toUpperCase();
+      if(a[0]===b[0])s+=rev?3:2;
+      if(rev&&a.length===b.length)s+=2;
+      if(rev)s+=Math.min(3,[...new Set(a)].filter(ch=>b.includes(ch)).length);
+    }else if(c.t==='port'){
+      const p=parseInt(c.f.slice(5),10),q=parseInt(cand[0].slice(5),10),d=Math.abs(p-q);
+      s+=d<=5?(rev?4:2):d<100?(rev?3:1):d<1000?1:0;
+      // secure / insecure twins (IMAP vs IMAPS, POP3 vs POP3S, LDAP vs LDAPS) are the classic trap
+      const base=x=>String(x).toUpperCase().split(/[^A-Z0-9]+/)[0].replace(/S$/,'');
+      if(base(c.b)&&base(c.b)===base(cand[1]))s+=4;
+    }else{
+      s+=shared(c.f,cand[0]);
+      if(rev&&c.f.split(' ').length===cand[0].split(' ').length)s+=1;
+    }
+    return s;
+  },
+  // Build a fresh question for a card. Picks 2 of the 6 most similar wrong answers at random,
+  // and never reuses the exact wrong pair this card showed last time.
+  flashQuestion(c){
+    const rev=Math.random()<Modes.FLASH_REVERSE,pool=Modes.flashPool(c.t);
+    const right=rev?c.f:c.b,show=x=>rev?x[0]:x[1];
+    const seen=new Set([right.toLowerCase()]);
+    const cands=pool.filter(x=>x[0]!==c.f).filter(x=>{const v=show(x).toLowerCase();if(seen.has(v))return false;seen.add(v);return true})
+      .map(x=>({x,score:Modes.flashSim(c,x,rev)+Math.random()*1.5}))
+      .sort((a,b)=>b.score-a.score).slice(0,6);
+    Modes._fcLast=Modes._fcLast||{};
+    const last=Modes._fcLast[c.k]||'',sig=p=>p.map(o=>show(o.x)).sort().join('|');
+    // Weighted draw: the closest look-alikes (like IMAP for IMAPS) come up most often, but the pair still varies.
+    const lo=Math.min(...cands.map(o=>o.score));
+    const draw=()=>{const left=cands.slice(),out=[];while(out.length<2&&left.length){const w=left.map(o=>Math.pow(o.score-lo+1,1.6)),t=w.reduce((a,b)=>a+b,0);let r=Math.random()*t,i=0;while(i<left.length-1&&(r-=w[i])>0)i++;out.push(left.splice(i,1)[0])}return out};
+    let pick,tries=0;
+    do{pick=draw();tries++}while(tries<10&&sig(pick)===last);
+    Modes._fcLast[c.k]=sig(pick);
+    const opts=shuffle([{text:right,pair:[c.f,c.b],ok:true}].concat(pick.map(p=>({text:show(p.x),pair:p.x,ok:false}))));
+    const ask=rev?(c.t==='acronym'?'Which acronym stands for this?':c.t==='port'?'Which port does this use by default?':'Which term matches this definition?')
+                 :(c.t==='acronym'?'What does this acronym stand for?':c.t==='port'?'Which protocol uses this port?':'Which definition matches this term?');
+    return {rev,prompt:rev?c.b:c.f,ask,opts,ans:opts.findIndex(o=>o.ok),pick:null};
+  },
   flash(deck){
     deck=deck||(Modes.FC&&Modes.FC.deck)||'all';
     const all=Modes.flashCards(deck),by=Object.fromEntries(all.map(x=>[x.k,x]));
-    Modes.FC={deck,cards:srsOrder(all.map(x=>x.k)).slice(0,20).map(k=>Object.assign({again:0},by[k])),i:0,flip:false,knew:0,miss:0};
+    Modes.FC={deck,cards:srsOrder(all.map(x=>x.k)).slice(0,20).map(k=>Object.assign({again:0},by[k])),i:0,knew:0,miss:0};
     Modes.flashRender();
     UI.keyHandler=e=>{
       const F=Modes.FC;
       if(F.i>=F.cards.length){if(e.key==='Enter')Modes.flash(F.deck);return}
-      if(e.key===' '||e.key==='Enter'){e.preventDefault();Modes.flashFlip()}
-      else if(F.flip&&(e.key==='1'||e.key==='ArrowLeft'))Modes.flashGrade(false);
-      else if(F.flip&&(e.key==='2'||e.key==='ArrowRight'))Modes.flashGrade(true);
+      const c=F.cards[F.i],n='123'.indexOf(e.key);
+      if(n>=0&&c.q&&c.q.pick===null)Modes.flashAnswer(n);
+      else if((e.key==='Enter'||e.key===' ')&&c.q&&c.q.pick!==null){e.preventDefault();Modes.flashNext()}
     };
   },
-  flashFlip(){const F=Modes.FC;if(F.i>=F.cards.length)return;F.flip=!F.flip;sfx.select();Modes.flashRender()},
-  flashGrade(ok){
-    const F=Modes.FC,c=F.cards[F.i];if(!c||!F.flip)return;
-    srsGrade(c.k,ok);save();
-    if(ok){F.knew++;sfx.granted()}else{F.miss++;sfx.denied();if(c.again<2){c.again++;F.cards.splice(Math.min(F.i+4,F.cards.length),0,c)}}   // missed cards come back later this session
-    F.i++;F.flip=false;
-    if(F.i>=F.cards.length)addXp(F.knew*2);
+  flashAnswer(i){
+    const F=Modes.FC,c=F.cards[F.i];if(!c||!c.q||c.q.pick!==null||!c.q.opts[i])return;
+    c.q.pick=i;const ok=c.q.opts[i].ok;
+    srsGrade(c.k,ok);save();   // same spaced repetition as before: wrong drops to the 1-minute box, right moves up a box
+    if(ok){F.knew++;sfx.granted()}
+    else{F.miss++;sfx.denied();if(c.again<2){c.again++;F.cards.splice(Math.min(F.i+4,F.cards.length),0,Object.assign({},c,{q:null}))}}   // missed cards come back later this round, with new choices
     Modes.flashRender();
+  },
+  flashNext(){
+    const F=Modes.FC,c=F.cards[F.i];if(!c||!c.q||c.q.pick===null)return;
+    F.i++;if(F.i>=F.cards.length)addXp(F.knew*2);
+    sfx.select();Modes.flashRender();
   },
   flashRender(){
     const F=Modes.FC;
     const tabs=`<div class="tabs">${Object.entries(Modes.FLASH_DECKS).map(([k,n])=>{const keys=Modes.flashCards(k).map(x=>x.k);return `<button class="tab ${F.deck===k?'on':''}" onclick="Modes.flash('${k}')">${n} <span class="tiny">${srsDueCount(keys)} due &middot; ${keys.filter(x=>!S.srs[x]).length} new</span></button>`}).join('')}</div>`;
     if(F.i>=F.cards.length){
       UI.set(`<div class="result win"><h2 class="pix">&gt; deck complete</h2><div class="bigscore pix">${F.knew}/${F.knew+F.miss}</div>
-        <p>Cards you knew move up a box and come back after a longer gap. Cards you missed come back in about a minute. +${F.knew*2} XP</p>${tabs}
+        <p>Cards you got right move up a box and come back after a longer gap. Cards you missed come back in about a minute. +${F.knew*2} XP</p>${tabs}
         <div class="row center"><button class="btn" onclick="Modes.flash('${F.deck}')">Next 20 cards</button><button class="btn ghost" onclick="App.go('world')">Map</button></div></div>`);
       return;
     }
-    const c=F.cards[F.i],bx=srsBox(c.k);
-    UI.set(`<div class="flash"><div class="bhead"><span class="pix">&gt; flashcards --deck ${F.deck}</span><span>card ${F.i+1} / ${F.cards.length}</span><span class="tiny">knew ${F.knew} &middot; missed ${F.miss}</span></div>
+    const c=F.cards[F.i];if(!c.q)c.q=Modes.flashQuestion(c);
+    const q=c.q,done=q.pick!==null,bx=srsBox(c.k);
+    const opts=q.opts.map((o,i)=>{let cls='opt';if(done){if(o.ok)cls+=' correct';else if(i===q.pick)cls+=' wrong';else cls+=' dim'}
+      return `<button class="${cls}" data-fc="${i}" ${done?'disabled':''}><span class="k">${i+1}</span><span>${esc(o.text)}</span></button>`}).join('');
+    let fb='';
+    if(done){
+      const mine=q.opts[q.pick],okPick=mine.ok;
+      const line=`${esc(c.f)} = ${esc(c.b)}.`+(okPick?'':` <span class="muted">You picked ${esc(mine.text)}, which ${q.rev?(c.t==='acronym'?'stands for':c.t==='port'?'is used by':'means'):'goes with'} ${esc(q.rev?mine.pair[1]:mine.pair[0])}.</span>`);
+      fb=`<div class="fb ${okPick?'ok':'no'} fcfb"><div class="fbtext"><b class="pix">${okPick?'ACCESS GRANTED':'ACCESS DENIED'}</b>${bx===null?'':` <span class="chip">next review: ${SRS_LABEL[bx]}</span>`}<p>${line}</p></div><button class="btn" id="fcNext">[ next ] &#9166;</button></div>`;
+    }
+    const el=UI.set(`<div class="flash"><div class="bhead"><span class="pix">&gt; flashcards --deck ${F.deck}</span><span>card ${F.i+1} / ${F.cards.length}</span><span class="tiny">right ${F.knew} &middot; missed ${F.miss}</span></div>
       ${tabs}<div class="hp"><i style="width:${100*F.i/F.cards.length}%;background:var(--cyan)"></i></div>
-      <button class="fcard ${F.flip?'flipped':''}" onclick="Modes.flashFlip()" aria-label="${F.flip?'Show the front':'Flip card'}">
-        <div class="fface front"><span class="tiny">${c.t}</span><div class="fterm">${esc(c.f)}</div><span class="tiny">tap or press space to flip</span></div>
-        <div class="fface back"><span class="tiny">${esc(c.f)}</span><div class="fdef">${esc(c.b)}</div><span class="tiny">${bx===null?'new card':'box '+bx+' &middot; next gap '+SRS_LABEL[bx]}</span></div>
-      </button>
-      <div class="row center"><button class="btn danger" ${F.flip?'':'disabled'} onclick="Modes.flashGrade(false)">&#8592; I didn't (1)</button><button class="btn" ${F.flip?'':'disabled'} onclick="Modes.flashGrade(true)">I knew it (2) &#8594;</button></div></div>`);
+      <div class="fcq ${q.rev?'rev':''}"><span class="tiny">${c.t}${q.rev?' &middot; reverse':''} &middot; ${esc(q.ask)}</span><div class="${q.rev?'fdef':'fterm'}">${esc(q.prompt)}</div></div>
+      <div class="opts fcopts">${opts}</div>
+      ${fb||`<p class="tiny center">Keys 1-3 to answer &middot; ${bx===null?'new card':'box '+bx+' &middot; next gap if right: '+SRS_LABEL[Math.min(5,bx+1)]}</p>`}</div>`);
+    el.querySelectorAll('[data-fc]').forEach(b=>b.onclick=()=>Modes.flashAnswer(+b.dataset.fc));
+    const nx=el.querySelector('#fcNext');if(nx){nx.onclick=()=>Modes.flashNext();nx.focus({preventScroll:true})}
   },
 
   // ---------- Objectives heatmap ----------

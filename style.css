@@ -337,11 +337,6 @@ body[data-mode=blitz] #panel,body[data-mode=exam] #panel,body[data-mode=lab] #pa
 /* flashcards */
 .flash{background:var(--panel);border:1px solid var(--line2);border-radius:4px;padding:16px 18px;display:grid;gap:10px}
 .flash .tabs .tiny,.result .tabs .tiny{margin-left:4px}
-.fcard{position:relative;width:min(560px,100%);height:clamp(170px,30dvh,260px);margin:4px auto;border:0;background:none;padding:0;perspective:1200px;cursor:pointer}
-.fface{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:16px 20px;border:1px solid var(--green);border-radius:4px;background:#010a06;box-shadow:var(--glow-g);backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:transform .45s cubic-bezier(.3,.7,.3,1)}
-.fface.back{transform:rotateY(180deg);border-color:var(--cyan);box-shadow:var(--glow-c)}
-.fcard.flipped .front{transform:rotateY(-180deg)}
-.fcard.flipped .back{transform:rotateY(0)}
 .fterm{font-family:var(--big);font-size:clamp(40px,8dvh,72px);line-height:1;color:var(--green);text-shadow:var(--glow-g);text-align:center;word-break:break-word}
 .fdef{font-family:var(--body);font-size:clamp(17px,2.8dvh,24px);color:#f2fff9;text-align:center;max-width:46ch}
 /* heatmap */
@@ -778,3 +773,12 @@ body.bover[data-mode=packet] #panel{max-height:none;flex:1 1 auto}
 .chip.prog{color:var(--amber);border-color:var(--amber);justify-self:start}
 .chbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
+
+/* Flashcards: multiple choice */
+.fcq{display:grid;gap:6px;justify-items:center;text-align:center;margin:6px auto 4px;max-width:720px;padding:14px 18px;border:1px solid var(--green);border-radius:4px;background:#010a06;box-shadow:var(--glow-g)}
+.fcq.rev{border-color:var(--cyan);box-shadow:var(--glow-c)}
+.fcq .fterm{font-size:clamp(34px,7dvh,64px)}
+.fcopts{max-width:720px;width:100%;margin:0 auto}
+.flash .fcfb{max-width:720px;width:100%;margin:8px auto 0;display:flex;gap:14px;align-items:flex-end}
+.flash .fcfb .fbtext{flex:1;min-width:0}
+.flash .fcfb p{margin:4px 0 0}
