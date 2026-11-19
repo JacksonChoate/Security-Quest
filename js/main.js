@@ -36,7 +36,7 @@ const App={
       wrap.hidden=false;
       const h=mode==='battle'?BH:540;   // battles use a compact 960x320 arena
       if(this.game.scale.height!==h)this.game.scale.setGameSize(960,h);
-      this.game.scale.refresh();requestAnimationFrame(()=>this.game.scale.refresh());
+      this.refit();requestAnimationFrame(()=>this.refit());
       // Start the scene a moment later so any "stop" queued by the previous screen runs first.
       // (Without this, switching screens quickly could shut the new battle down right after it started.)
       const token=this._goToken=(this._goToken||0)+1,data=mode==='battle'?{d:arg}:{};
@@ -61,6 +61,9 @@ const App={
     else this.go('world');
   },
   scene(k){const s=this.game&&this.game.scene.getScene(k);return s&&s.sys.isActive()?s:null},
+  // Fit the canvas to its frame. Phaser's refresh() reuses its stored frame size, so re-measure first.
+  // (Skipped until Phaser has booted and created its canvas; the frame watcher can fire before that.)
+  refit(){const g=this.game,s=g&&g.scale;if(!s||!g.isBooted||!g.canvas)return;s.getParentBounds();s.refresh()},
 
   hud(){
     const l=level(),cur=lvlXp(l),nxt=lvlXp(l+1),pct=Math.round(100*(S.xp-cur)/(nxt-cur));
@@ -82,15 +85,40 @@ const App={
   }
 };
 
+// Safety net: an error thrown inside any Phaser callback (a tween, timer or scene update) used to stop the
+// game loop for good: the map froze and the canvas never resized again. Catch it, log it, and keep running.
+function guardGameLoop(){
+  const TS=Phaser.Core.TimeStep.prototype;if(TS.__guarded)return;TS.__guarded=true;
+  const step=TS.step;let n=0;
+  TS.step=function(time){
+    try{return step.call(this,time)}
+    catch(e){n++;if(n<=5||n%600===0)console.error('Game loop error (recovered, game keeps running):',e)}
+  };
+}
+
 function bootGame(){
-  Meta.applyPrefs();applyTheme();App.hud();
+  Meta.applyPrefs();applyTheme();App.hud();guardGameLoop();
   App.game=new Phaser.Game({
     type:Phaser.AUTO,parent:'game',width:960,height:540,backgroundColor:'#000000',pixelArt:true,
     physics:{default:'arcade',arcade:{debug:false}},
-    scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_HORIZONTALLY},
+    // expandParent:false keeps Phaser from rewriting #game's size; the page CSS owns the frame size.
+    scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_HORIZONTALLY,expandParent:false},
     input:{keyboard:{capture:[]}},
+    // Test pages only (qa/): headless test browsers barely run animation frames, so drive the loop with timers.
+    ...(window.QA_TIMER_LOOP||/[?&]qa-timer-loop=1/.test(location.search)?{fps:{forceSetTimeOut:true,target:6}}:{}),
     scene:[BootScene,WorldScene,BattleScene,PacketScene]
   });
+  // Re-fit the canvas whenever its frame changes size for ANY reason: window resize, returning from a
+  // full-panel mode (the frame was hidden), the battle arena shrinking or growing, fonts or the top bar settling.
+  // Phaser alone only re-measures on window resize, so the canvas could be left shrunk inside a bigger frame.
+  if(window.ResizeObserver){
+    let last='';
+    new ResizeObserver(entries=>{
+      const r=entries[0].contentRect,k=Math.round(r.width)+'x'+Math.round(r.height);
+      if(k===last||!r.width||!r.height)return;last=k;
+      App.refit();
+    }).observe(document.getElementById('game'));
+  }
 }
 
 // Wait for the pixel font so canvas text renders in it, but never hang on a slow network.

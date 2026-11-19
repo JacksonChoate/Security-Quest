@@ -80,7 +80,8 @@ class BattleScene extends Phaser.Scene{
 
   // ---------- drawing ----------
   drawBars(){
-    const B=this.B,en=B.enemies[B.ei],g=this.bars;g.clear();
+    // Clamp: a late attack animation can redraw after the last foe is gone (B.ei past the end).
+    const B=this.B,en=B.enemies[Math.min(B.ei,B.enemies.length-1)],g=this.bars;g.clear();
     const bar=(x,w,pct,col)=>{g.fillStyle(0x001a0e,1);g.fillRect(x,54,w,12);g.lineStyle(1,0x0c5c3a,1);g.strokeRect(x,54,w,12);g.fillStyle(col,1);g.fillRect(x+2,56,(w-4)*Math.max(0,pct),8)};
     bar(36,300,B.php/B.pmax,B.php<=30?0xff2e63:0x00ff9c);
     bar(BW-336,300,en.hp/en.max,0xff2e63);
@@ -91,6 +92,8 @@ class BattleScene extends Phaser.Scene{
     this.streakTxt.setText(B.streak>=2?`STREAK x${B.streak}`:'');
   }
   spawnEnemy(first){
+    // If the player moved on before the last attack's death animation, clear the old foe sprite first.
+    if(this.foe){const old=this.foe;this.foe=null;if(this.foeIdle)this.foeIdle.stop();this.tweens.add({targets:old,alpha:0,scale:0,duration:200,onComplete:()=>old.destroy()})}
     const en=this.B.enemies[this.B.ei];
     const x0=first?FOE_X:BW+140;
     Sound.play(en.boss?'boss':'battle');
@@ -128,7 +131,7 @@ class BattleScene extends Phaser.Scene{
 
   // ---------- attacks ----------
   heroAttack(dmg,crit,big,done){
-    const en=this.B.enemies[this.B.ei],shots=big?5:crit?3:1,ty=GROUND-60;
+    const en=this.B.enemies[this.B.ei],shots=big?5:crit?3:1,ty=GROUND-60,target=this.foe;   // the foe this attack is aimed at
     // typing burst on the holo-keyboard, then code bolts fly
     this.hero.play('hk_type');this.hero.once('animationcomplete',()=>this.hero.play('hk_idle'));
     for(let i=0;i<4;i++)this.time.delayedCall(i*45,()=>sfx.key());
@@ -147,7 +150,8 @@ class BattleScene extends Phaser.Scene{
             this.floatText(FOE_X,GROUND-150,(big?'COUNTER! ':crit?'CRIT! ':'')+'-'+dmg,big||crit?'#ffd23f':'#00ff9c',big||crit?30:26);
             crit||big?sfx.crit():sfx.hit();
             this.drawBars();
-            if(en.hp<=0)this.killEnemy();
+            // Only finish off the foe this attack was aimed at (the player may already have moved on to the next one).
+            if(en.hp<=0&&target&&this.foe===target)this.killEnemy();
             done&&done();
           }
         }});
@@ -174,7 +178,8 @@ class BattleScene extends Phaser.Scene{
     }});
   }
   killEnemy(){
-    const foe=this.foe;this.foe=null;if(this.foeIdle)this.foeIdle.stop();
+    const foe=this.foe;if(!foe)return;   // already gone
+    this.foe=null;if(this.foeIdle)this.foeIdle.stop();
     if(this.foeAnim){   // glitch-out death: tearing frames, then a CRT-style collapse
       const k=foe.texture.key,acc=hexNum(this.foeAcc),big=this.foeIsBoss,cy=GROUND-(big?90:50);
       this.time.delayedCall(120,()=>{
@@ -260,7 +265,7 @@ class BattleScene extends Phaser.Scene{
     this.ask();
   }
   finish(win){
-    const B=this.B;B.over=true;UI.keyHandler=null;Sound.alarm(false);this.vignette.setVisible(false);document.body.classList.add('bover');requestAnimationFrame(()=>App.game.scale.refresh());   // shrink the arena so results fit
+    const B=this.B;B.over=true;UI.keyHandler=null;Sound.alarm(false);this.vignette.setVisible(false);document.body.classList.add('bover');requestAnimationFrame(()=>App.refit());   // shrink the arena so results fit
     if(B.d&&B.d.kind==='daily')Meta.dailyDone(B);   // daily challenge bonus (once per day)
     if(win){
       if(typeof B.d==='number'){S.cleared[B.d]=true;addXp(100)}else addXp(40);

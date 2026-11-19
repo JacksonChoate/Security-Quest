@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <base href="../">
+<meta name="qa-sizes" content="1366x768,1920x1080">
 <link rel="stylesheet" href="style.css">
 <script>
 // QA harness: collect every error before the game loads.
-window.QA=[];window.QAERR=[];
+window.QA=[];window.QAERR=[];window.QA_TIMER_LOOP=true;   // real game loop under virtual time
 window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno));
 window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
 const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.join(' '));_ce.apply(console,a)};
@@ -13,7 +14,7 @@ try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stri
 </script>
 </head><body>
 <div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js" crossorigin="anonymous"></script>
 <script src="js/questions.js"></script><script src="js/objectives.js"></script>
 <script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
 <script src="js/pbq.js"></script><script src="js/sims.js"></script>
@@ -113,8 +114,8 @@ async function run(){
   const bad=Q.filter(q=>!q.o||!q.w||q.w.length!==4||q.a.length!==4||new Set(q.a).size!==4);log('questions='+Q.length+' missing tags/whys or dup answers='+bad.length+(bad.length?' ids '+bad.slice(0,10).map(q=>q.id).join(','):''));
   log('EXPL_WARN '+JSON.stringify(EXPL_WARN));
   log('ach='+ACH.length+' outfits='+OUTFITS.length+' sims='+SIMS.length);
-  document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`);
+  App.game&&App.game.loop.stop();document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`);
 }
-if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QAERR.push('HARNESS '+e.message+' '+e.stack);document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`)}),500));
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QAERR.push('HARNESS '+e.message+' '+e.stack);App.game&&App.game.loop.stop();document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`)}),500));
 </script>
 </body></html>

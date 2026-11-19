@@ -149,7 +149,7 @@ class PacketScene extends Phaser.Scene{
     this.tweens.add({targets:t,alpha:1,duration:250,hold:700,yoyo:true,onComplete:()=>t.destroy()});
   }
   finish(){
-    const st=this.st;if(st.over)return;st.over=true;Sound.alarm(false);document.body.classList.add('bover');requestAnimationFrame(()=>App.game.scale.refresh());
+    const st=this.st;if(st.over)return;st.over=true;Sound.alarm(false);document.body.classList.add('bover');requestAnimationFrame(()=>App.refit());
     const newBest=st.score>S.best.packet;if(newBest)S.best.packet=st.score;
     save();addXp(Math.round(st.score/5));sfx.lose();
     this.packets.forEach(pk=>{if(pk.c.active)this.tweens.add({targets:pk.c,alpha:0,duration:400})});

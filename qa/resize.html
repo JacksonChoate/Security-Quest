@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="qa-sizes" content="2100x1400">
+<title>QA: resizing</title>
+<script>
+// Resize test: loads the real game (../index.html) in an iframe and resizes the iframe, which is a real
+// window resize for the game. The parent page needs to be bigger than the largest size tested.
+window.QA=[];window.QAERR=[];
+if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
+try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:false}))}catch(e){}
+</script>
+<style>body{margin:0;background:#222}iframe{border:0;display:block;background:#000}</style>
+</head><body>
+<script>
+const log=(...a)=>QA.push(a.join(' '));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+let F,W;   // the iframe and its window
+const X=n=>W.eval(n);   // top-level consts (App, UI, Modes) are not window properties
+const vis=el=>el&&!el.disabled&&!el.hidden&&el.offsetParent!==null;
+function hook(){
+  W=F.contentWindow;
+  W.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno));
+  const ce=W.console.error;W.console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,2).join(' | '):String(x)).join(' '));ce.apply(W.console,a)};
+}
+async function size(w,h){F.style.width=w+'px';F.style.height=h+'px';await wait(900)}
+function keyEv(type,code,keyCode,key){const e=new W.KeyboardEvent(type,{key,code,bubbles:true,cancelable:true});Object.defineProperty(e,'keyCode',{get:()=>keyCode});Object.defineProperty(e,'which',{get:()=>keyCode});W.dispatchEvent(e)}
+async function holdKey(code,kc,key,ms){keyEv('keydown',code,kc,key);await wait(ms);keyEv('keyup',code,kc,key);await wait(60)}
+// Is the canvas filling its frame, is the loop running, and (on the map) can the player move?
+async function check(tag,opts){
+  opts=opts||{};const A=X('App'),probs=[],errs=QAERR.splice(0);
+  const f0=A.game.loop.frame;await wait(800);if(A.game.loop.frame<=f0)probs.push('game loop stopped');
+  const wrap=W.document.getElementById('gameWrap');
+  if(!wrap.hidden){
+    const cv=A.game.canvas.getBoundingClientRect(),box=W.document.getElementById('game').getBoundingClientRect();
+    if(Math.abs(cv.width-box.width)>3||Math.abs(cv.height-box.height)>3)probs.push(`canvas ${Math.round(cv.width)}x${Math.round(cv.height)} in frame ${Math.round(box.width)}x${Math.round(box.height)}`);
+    if(box.width<100)probs.push('frame only '+Math.round(box.width)+'px wide');
+  }
+  const de=W.document.documentElement;if(de.scrollWidth>W.innerWidth+2)probs.push('page scrolls sideways ('+de.scrollWidth+'px)');
+  if(opts.move){
+    const pl=A.game.scene.getScene('World').player,x0=pl.x;await holdKey('KeyD',68,'d',700);let moved=Math.abs(pl.x-x0)>5;
+    if(!moved){const x1=pl.x;await holdKey('KeyA',65,'a',700);moved=Math.abs(pl.x-x1)>5}
+    if(!moved)probs.push('player did not move');
+  }
+  errs.forEach(e=>probs.push('console: '+e.slice(0,200)));
+  log(`${probs.length?'FAIL':'PASS'} ${tag} @${W.innerWidth}x${W.innerHeight}${probs.length?' :: '+probs.join(' || '):''}`);
+}
+const SIZES=[[1366,768],[1920,1080],[800,600],[390,844],[2048,1280],[1024,1366]];
+async function run(){
+  F=document.createElement('iframe');F.style.width='1366px';F.style.height='768px';
+  F.src='../index.html?qa-timer-loop=1';document.body.appendChild(F);
+  await new Promise(r=>F.onload=r);hook();
+  for(let i=0;i<80&&!(X('App')&&X('App').mode);i++)await wait(250);
+  if(X('App').mode==='handle'){for(let i=0;i<40;i++){const fm=W.document.getElementById('hsForm');if(fm&&!fm.hidden)break;await wait(250)}const inp=W.document.getElementById('hsInput');inp.value='qa_resize';W.document.getElementById('hsForm').requestSubmit();await wait(900)}
+  if(X('UI')._modal)X('UI')._modal();
+  for(let i=0;i<60;i++){const w=X('App').game.scene.getScene('World');if(X('App').mode==='world'&&w.sys.isActive()&&w.player)break;await wait(250)}
+  if(X('UI')._modal)X('UI')._modal();await wait(600);log('map ready: mode='+X('App').mode);
+  await check('map at start',{move:true});
+
+  // 1. Resize repeatedly on the map
+  for(const [w,h] of SIZES){await size(w,h);await check('map after resize',{move:true})}
+
+  // 2. Resize during a battle, then keep playing and return to the map
+  await size(1366,768);X('App').go('battle',1);await wait(1500);
+  for(const [w,h] of SIZES){await size(w,h);await check('battle after resize')}
+  {const P=W.document.getElementById('panel');for(let i=0;i<30;i++){const b=[...P.querySelectorAll('#contBtn,.opt')].find(vis);if(b){b.click();await wait(300)}else await wait(300);if(P.querySelectorAll('.fb.ok,.fb.no').length&&i>4)break}
+   log((P.querySelector('.fb.ok,.fb.no,.result')?'ok':'STUCK')+' battle still answers questions after resizing')}
+  W.document.querySelector('#hud button').click();await wait(200);{const y=W.document.querySelector('.modal [data-a=yes]');if(y)y.click()}await wait(1200);
+  await check('map after battle with resizes',{move:true});
+
+  // 3. Resize while a full-panel mode hides the canvas (Flashcards), finish the round, return
+  X('App').go('flash','all');await wait(500);
+  for(const [w,h] of SIZES.slice(0,4)){await size(w,h);const M=X('Modes'),c=M.FC.cards[M.FC.i];if(c&&c.q&&c.q.pick===null)M.flashAnswer(c.q.ans);await wait(100);M.flashNext();await wait(200)}
+  for(let i=0;i<60&&X('Modes').FC.i<X('Modes').FC.cards.length;i++){const M=X('Modes'),c=M.FC.cards[M.FC.i];if(c.q&&c.q.pick===null)M.flashAnswer(c.q.ans);await wait(30);M.flashNext();await wait(30)}
+  await size(2048,1280);
+  [...W.document.querySelectorAll('#panel button')].find(b=>/^map$/i.test(b.textContent.trim())).click();await wait(1200);
+  await check('map after flashcards with resizes',{move:true});
+
+  // 4. Resize during Packet Defender
+  X('App').go('packet');await wait(1200);X('App').scene('Packet').start();
+  for(const [w,h] of SIZES.slice(0,3)){await size(w,h);await check('packet defender after resize')}
+  W.document.querySelector('#hud button').click();await wait(200);{const y=W.document.querySelector('.modal [data-a=yes]');if(y)y.click()}await wait(1200);
+  await size(1920,1080);await check('map after packet with resizes',{move:true});
+
+  X('App').game.loop.stop();   // let virtual time finish quickly
+  document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>');
+}
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QA.push('HARNESS '+e.message+' '+e.stack);try{X('App').game.loop.stop()}catch(x){}document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>')}),300));
+</script>
+</body></html>

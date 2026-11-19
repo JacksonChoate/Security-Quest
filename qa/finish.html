@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<base href="../">
+<meta name="qa-sizes" content="1366x768,1920x1080,2048x1280,390x844">
+<link rel="stylesheet" href="style.css">
+<script>
+window.QA=[];window.QAERR=[];window.QA_TIMER_LOOP=true;   // real game loop under virtual time
+window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno+(e.error&&e.error.stack?' :: '+e.error.stack.split('\n').slice(1,4).map(s=>s.trim()).join(' | '):'')));
+window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
+const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,3).join(' | '):String(x)).join(' '));_ce.apply(console,a)};
+if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="position:fixed;inset:0 0 auto;z-index:99;margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
+try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:true}))}catch(e){}
+</script>
+</head><body>
+<div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js" crossorigin="anonymous"></script>
+<script src="js/questions.js"></script><script src="js/objectives.js"></script>
+<script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
+<script src="js/pbq.js"></script><script src="js/sims.js"></script>
+<script src="js/state.js"></script><script src="js/audio.js"></script><script src="js/themes.js"></script><script src="js/ui.js"></script><script src="js/fx.js"></script><script src="js/bosses.js"></script><script src="js/minions.js"></script>
+<script src="js/scenes/boot.js"></script><script src="js/scenes/world.js"></script><script src="js/scenes/battle.js"></script><script src="js/scenes/packet.js"></script>
+<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/main.js"></script>
+<script>
+// ---- Finish every mode normally, return to the map, and check the map is healthy ----
+const log=(...a)=>QA.push(a.join(' '));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const P=()=>document.getElementById('panel');
+const vis=el=>el&&!el.disabled&&!el.hidden&&el.offsetParent!==null;
+const st=k=>{const s=App.game.scene.getScene(k);return s?s.sys.settings.status:'none'};
+// Phaser reads keyCode; Chrome ignores keyCode in the KeyboardEvent constructor, so define it.
+function keyEv(type,code,keyCode,key){const e=new KeyboardEvent(type,{key,code,bubbles:true,cancelable:true});Object.defineProperty(e,'keyCode',{get:()=>keyCode});Object.defineProperty(e,'which',{get:()=>keyCode});window.dispatchEvent(e)}
+async function holdKey(code,keyCode,key,ms){keyEv('keydown',code,keyCode,key);await wait(ms);keyEv('keyup',code,keyCode,key);await wait(60)}
+
+// Answer correctly when we can tell which choice is right (to win), or wrongly (to lose).
+function pickOpt(win){
+  const sc=App.scene('Battle'),q=sc&&sc.B&&sc.B.cur,btns=[...P().querySelectorAll('.opt')].filter(vis);
+  if(!btns.length)return null;
+  if(q){const right=btns.find(b=>b.children[1]&&b.children[1].textContent===q.a[0]);if(win&&right)return right;if(!win)return btns.find(b=>b!==right)||btns[0]}
+  return btns[0];
+}
+// One step forward on whatever is on screen. win=true answers correctly.
+async function step(win){
+  const p=P(),q=s=>[...p.querySelectorAll(s)].find(vis);let b;
+  if(b=q('#sCont'))return b.click(),'story';
+  if(b=q('#sSkip'))return b.click(),'skip';
+  if(b=q('#contBtn'))return b.click(),'next';
+  if(b=q('[data-sim=cont]')||q('#pbqCont'))return b.click(),'pbq-cont';
+  if(b=q('.sdopts [data-i]'))return b.click(),'decision';
+  if((b=q('[data-sim=check]')||q('#pbqCheck'))&&!b.disabled)return b.click(),'pbq-check';
+  const l=[...p.querySelectorAll('.mi[data-l]')].find(x=>vis(x)&&!x.querySelector('i'));if(l){l.click();await wait(20);const r=[...P().querySelectorAll('.mi[data-r]')].find(x=>vis(x)&&!x.classList.contains('used'));if(r)r.click();return 'match'}
+  if(b=q('.pool .mi[data-i]'))return b.click(),'order';
+  const un=[...p.querySelectorAll('.simq')].find(x=>!x.querySelector('.mi.sel'));if(un){un.querySelector('.mi').click();return 'sim'}
+  if(b=q('[data-add]'))return b.click(),'fw';
+  if(b=q('.netdev')){b.click();await wait(20);const s=[...p.querySelectorAll('.netslot:not(.filled)')].find(vis);if(s)s.click();return 'net'}
+  if(b=q('.pitem:not(.flagged)'))return b.click(),'phish';
+  if(b=pickOpt(win))return b.click(),'answer';
+  return null;
+}
+async function playTo(sel,win,max){
+  for(let i=0;i<(max||400);i++){if(P().querySelector(sel))return true;const r=await step(win);await wait(r?70:250)}
+  return false;
+}
+// Return the way a player does after finishing: the screen's own Map button if it has one, else the top-bar button.
+async function backToMap(){
+  const m=[...P().querySelectorAll('[data-a=map],button')].find(b=>vis(b)&&(/^(back to )?map$/i.test(b.textContent.trim())||b.dataset.a==='map'));
+  if(m)m.click();else{const h=document.querySelector('#hud button');h&&h.click();await wait(80);const y=document.querySelector('.modal [data-a=yes]');if(y)y.click()}
+  await wait(900);
+}
+// Health of the map after returning.
+async function mapCheck(tag){
+  const errs=QAERR.splice(0),w=App.game.scene.getScene('World'),probs=[];
+  if(App.mode!=='world')probs.push('mode='+App.mode);
+  if(st('World')!==5)probs.push('World status '+st('World'));
+  const others=['Battle','Packet'].filter(k=>st(k)>=1&&st(k)<=7);if(others.length)probs.push('still alive: '+others.join(','));
+  const f0=App.game.loop.frame;await wait(800);if(App.game.loop.frame<=f0)probs.push('game loop stopped (frame '+f0+')');
+  if(App.game.scale.width!==960||App.game.scale.height!==540)probs.push('game size '+App.game.scale.width+'x'+App.game.scale.height);
+  const cv=App.game.canvas.getBoundingClientRect(),box=document.getElementById('game').getBoundingClientRect();
+  if(Math.abs(cv.width-box.width)>3||Math.abs(cv.height-box.height)>3)probs.push(`canvas ${Math.round(cv.width)}x${Math.round(cv.height)} in frame ${Math.round(box.width)}x${Math.round(box.height)}`);
+  if(box.width<100||box.height<60)probs.push(`frame too small ${Math.round(box.width)}x${Math.round(box.height)}`);
+  const pl=w&&w.player;
+  if(pl){
+    const x0=pl.x;await holdKey('KeyD',68,'d',700);let moved=Math.abs(pl.x-x0)>5;
+    if(!moved){const x1=pl.x;await holdKey('KeyA',65,'a',700);moved=Math.abs(pl.x-x1)>5}
+    if(!moved)probs.push('player did not move with WASD');
+  }else probs.push('no player sprite');
+  errs.forEach(e=>probs.push('console: '+e.slice(0,200)));
+  log(`${probs.length?'FAIL':'PASS'} ${tag} -> map @${innerWidth}x${innerHeight}${probs.length?' :: '+probs.join(' || '):''}`);
+}
+async function run(){
+  for(let i=0;i<60&&!App.mode;i++)await wait(250);
+  if(App.mode==='handle'){await wait(400);const inp=document.getElementById('hsInput');inp.value='qa_tester';document.getElementById('hsForm').requestSubmit();await wait(700)}
+  if(UI._modal)UI._modal();
+  Settings.motion=false;Meta.applyPrefs();   // play with full effects, like a normal player
+  await wait(500);await mapCheck('boot');
+
+  // Battles to a normal finish
+  App.go('battle',1);await wait(700);log((await playTo('.result',true))?'ok zone 1 won':'STUCK zone 1 win');await backToMap();await mapCheck('zone battle WIN');
+  App.go('battle',2);await wait(700);log((await playTo('.result',false))?'ok zone 2 lost':'STUCK zone 2 lose');await backToMap();await mapCheck('zone battle LOSE');
+  App.go('battle','missed');await wait(700);if(missedIds().length){log((await playTo('.result',true))?'ok rematch won':'STUCK rematch');await backToMap();await mapCheck('rematch WIN')}
+  App.go('weak');await wait(700);log((await playTo('.result',true))?'ok weak spots':'STUCK weak spots');await backToMap();await mapCheck('weak spots WIN');
+  Meta.startDaily();await wait(700);log((await playTo('.result',true))?'ok daily':'STUCK daily');await backToMap();await mapCheck('daily challenge');
+  Story.start(0);await wait(400);log((await playTo('.debrief',true,500))?'ok story ch1 finished':'STUCK story ch1');await backToMap();await mapCheck('story chapter FINISH');
+  S.story.ch=Math.max(S.story.ch,1);Story.start(1);await wait(400);log((await playTo('.debrief',false,500))?'ok story ch2 lost':'STUCK story ch2 lose');await backToMap();await mapCheck('story chapter LOSE');
+
+  // Packet Defender: let the game end (every packet through, integrity hits 0)
+  // (packets sped up so the game ends in seconds; integrity still runs out the normal way)
+  App.go('packet');await wait(700);{const pk=App.scene('Packet');if(pk){pk.start();pk.st.speed=900;pk.st.gap=250}for(let i=0;i<120&&!(pk&&pk.st.over);i++)await wait(500);log(pk&&pk.st.over?'ok packet game over':'STUCK packet')}
+  await backToMap();await mapCheck('packet defender GAME OVER');
+
+  // Blitz: answer a few, then let the timer run out (clock skipped to its last second)
+  App.go('blitz','acr');await wait(300);for(let i=0;i<6;i++){const o=P().querySelector('.opt');if(o)o.click();await wait(900)}Modes.BL.time=1;for(let i=0;i<30&&!Modes.BL.done;i++)await wait(300);log(Modes.BL.done?'ok blitz timed out':'STUCK blitz');
+  await backToMap();await mapCheck('acronym blitz TIME UP');
+
+  // Exams: submit a quick quiz; let a full exam's timer run out
+  App.go('exam');await wait(200);Modes.examStart('quick');await wait(1200);for(let i=0;i<15;i++){Modes.exAns(i%4);Modes.exGo(i+1);await wait(15)}Modes.exReview();await wait(100);
+  document.querySelector('.review-screen .btn:not(.ghost)').click();await wait(200);{const y=document.querySelector('.modal [data-a=yes]');if(y)y.click()}await wait(400);
+  log(Modes.EX.result?'ok quick quiz submitted':'STUCK quiz submit');await backToMap();await mapCheck('quick quiz SUBMIT');
+  App.go('exam');await wait(200);Modes.examStart('full');await wait(1500);Modes.EX.end=Date.now()+1500;await wait(3500);
+  log(Modes.EX.result?'ok full exam timed out':'STUCK exam timeout');await backToMap();await mapCheck('full exam TIME OUT');
+
+  // PBQ Lab and Flashcards to the end of their rounds
+  App.go('lab');await wait(300);log((await playTo('.result',true,400))?'ok pbq lab finished':'STUCK lab');await backToMap();await mapCheck('pbq lab FINISH');
+  App.go('flash','all');await wait(300);
+  for(let i=0;i<80&&Modes.FC.i<Modes.FC.cards.length;i++){const c=Modes.FC.cards[Modes.FC.i];if(c.q&&c.q.pick===null)Modes.flashAnswer(i%4===0?(c.q.ans+1)%3:c.q.ans);await wait(40);Modes.flashNext();await wait(40)}
+  log(P().querySelector('.result')?'ok flashcard round finished':'STUCK flashcards');await backToMap();await mapCheck('flashcards ROUND COMPLETE');
+
+  // Other screens visited fully, then back
+  for(const m of ['heat','codex','profile','plan','story']){App.go(m);await wait(400);await backToMap();await mapCheck(m+' visit')}
+
+  App.game&&App.game.loop.stop();document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>');
+}
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QA.push('HARNESS '+e.message+' '+e.stack);App.game&&App.game.loop.stop();document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>')}),500));
+</script>
+</body></html>

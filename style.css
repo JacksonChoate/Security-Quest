@@ -782,3 +782,20 @@ body.bover[data-mode=packet] #panel{max-height:none;flex:1 1 auto}
 .flash .fcfb{max-width:720px;width:100%;margin:8px auto 0;display:flex;gap:14px;align-items:flex-end}
 .flash .fcfb .fbtext{flex:1;min-width:0}
 .flash .fcfb p{margin:4px 0 0}
+
+/* Flashcards on narrow screens (phones): compact so the question, 3 answers and the explanation fit */
+@media (max-width:640px){
+  .flash{padding:10px 10px;gap:6px}
+  .flash .bhead .tiny,.flash .tabs .tiny{display:none}
+  .flash .tabs{gap:4px}
+  .flash .tab{padding:4px 8px;font-size:12px}
+  .flash .hp{margin:2px 0}
+  .fcq{padding:8px 10px;gap:2px;margin:2px auto}
+  .fcq .fterm{font-size:clamp(28px,6dvh,44px)}
+  .fcq .fdef{font-size:15px}
+  .fcopts{gap:6px}
+  .fcopts .opt{padding:8px 10px;font-size:14px}
+  .flash .fcfb{padding:8px 10px;gap:8px;margin-top:6px}
+  .flash .fcfb p{font-size:13px;line-height:1.35}
+  .flash>p.tiny{margin:2px 0}
+}
