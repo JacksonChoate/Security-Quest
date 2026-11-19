@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<base href="../">
+<link rel="stylesheet" href="style.css">
+<script>
+// QA harness: collect every error before the game loads.
+window.QA=[];window.QAERR=[];
+window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno));
+window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
+const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.join(' '));_ce.apply(console,a)};
+if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="position:fixed;inset:0 0 auto;z-index:99;margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
+try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:true}))}catch(e){}
+</script>
+</head><body>
+<div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script src="js/questions.js"></script><script src="js/objectives.js"></script>
+<script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
+<script src="js/pbq.js"></script><script src="js/sims.js"></script>
+<script src="js/state.js"></script><script src="js/audio.js"></script><script src="js/themes.js"></script><script src="js/ui.js"></script><script src="js/fx.js"></script><script src="js/bosses.js"></script><script src="js/minions.js"></script>
+<script src="js/scenes/boot.js"></script><script src="js/scenes/world.js"></script><script src="js/scenes/battle.js"></script><script src="js/scenes/packet.js"></script>
+<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/main.js"></script>
+<script>
+const log=(...a)=>QA.push(a.join(' '));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const P=()=>document.getElementById('panel');
+const vis=el=>el&&!el.disabled&&!el.hidden&&el.offsetParent!==null;
+function overflow(tag){
+  const de=document.documentElement,p=P();
+  if(de.scrollHeight>innerHeight+2)log(`OVERFLOW page ${tag}: ${de.scrollHeight}px > ${innerHeight}px`);
+  if(document.body.dataset.mode!=='profile'&&p.scrollHeight>p.clientHeight+4)log(`PANEL-SCROLL ${tag}: content ${p.scrollHeight}px in ${p.clientHeight}px`);
+  if(de.scrollWidth>innerWidth+2)log(`OVERFLOW-X ${tag}: ${de.scrollWidth}px`);
+}
+// Click whatever moves the current screen forward. Returns a short label of what it did.
+async function step(){
+  const p=P(),q=s=>[...p.querySelectorAll(s)].find(vis);
+  let b;
+  if(b=q('#sCont'))return b.click(),'story-continue';
+  if(b=q('#sSkip'))return b.click(),'story-skip';
+  if(b=q('#contBtn'))return b.click(),'next';
+  if(b=q('[data-sim=cont]')||q('#pbqCont'))return b.click(),'pbq-continue';
+  if(b=q('.sdopts [data-i]'))return b.click(),'decision';
+  if(b=q('[data-sim=check]')||q('#pbqCheck')){
+    if(!b.disabled)return b.click(),'pbq-check';
+  }
+  // fill PBQs / sims
+  const l=[...p.querySelectorAll('.mi[data-l]')].find(x=>vis(x)&&!x.querySelector('i'));if(l){l.click();await wait(20);const r=[...P().querySelectorAll('.mi[data-r]')].find(x=>vis(x)&&!x.classList.contains('used'));if(r)r.click();return 'match-pair'}
+  if(b=q('.pool .mi[data-i]'))return b.click(),'order-item';
+  if(b=q('.simopts .mi:not(.sel)')){const qi=b.dataset.q;if(!p.querySelector(`.simopts .mi.sel[data-q="${qi}"]`))return b.click(),'sim-answer'}
+  const unanswered=[...p.querySelectorAll('.simq')].find(x=>!x.querySelector('.mi.sel'));if(unanswered){unanswered.querySelector('.mi').click();return 'sim-answer2'}
+  if(b=q('[data-add]'))return b.click(),'fw-add';
+  if(b=q('.netdev')){b.click();await wait(20);const s=[...p.querySelectorAll('.netslot:not(.filled)')].find(vis);if(s)s.click();return 'net-place'}
+  if(b=q('.pitem:not(.flagged)'))return b.click(),'phish-flag';
+  if(b=q('.opt'))return b.click(),'answer';
+  return null;
+}
+async function drive(tag,max,doneSel){
+  for(let i=0;i<max;i++){
+    if(P().querySelector(doneSel||'.result,.debrief'))return log(`OK ${tag} finished in ${i} steps`),true;
+    const r=await step();await wait(r?60:250);
+    if(i%5===0){const k=P().firstElementChild;overflow(tag+'#'+i+'['+(k?k.className:'')+']')}
+  }
+  const sc=App.game.scene.getScene('Battle');log(`STUCK ${tag}: mode=${App.mode} status=${sc&&sc.sys.settings.status} kind=${sc&&sc.B&&sc.B.d&&sc.B.d.kind} ei=${sc&&sc.B&&sc.B.ei} over=${sc&&sc.B&&sc.B.over} keyHandler=${!!UI.keyHandler} panel: ${P().innerText.slice(0,120).replace(/\s+/g,' ')}`);return false;
+}
+async function run(){
+  for(let i=0;i<60&&!App.mode;i++)await wait(250);
+  log('boot mode='+App.mode+' phaser='+(typeof Phaser));
+  if(App.mode==='handle'){await wait(500);const inp=document.getElementById('hsInput');if(inp){inp.value='qa_tester';document.getElementById('hsForm').requestSubmit()}else log('BUG handle input missing');await wait(500)}
+  if(UI._modal)UI._modal();
+  log('after handle mode='+App.mode+' handle='+S.handle);overflow('world');
+  const _ft=FX.type;FX.type=function(el,lines,cb,sp){log('FX.type '+lines[0].slice(0,40));return _ft.call(FX,el,lines,()=>{log('FX.type cb');cb&&cb()},sp)};
+  {const bs=App.game.scene.getScene('Battle'),sh=bs.sys.shutdown.bind(bs.sys);bs.sys.shutdown=function(d){if(window.QATRACE)log('SHUTDOWN Battle mode='+App.mode+' :: '+new Error().stack.split('\n').slice(2,9).map(s=>s.trim().replace(/\(.*\//,'(')).join(' | '));return sh(d)}}
+  // zone battles
+  for(const d of [1,2,3,4,5,6]){App.go('battle',d);await wait(400);await drive('zone'+d,260)}
+  App.go('battle','missed');await wait(400);if(missedIds().length)await drive('rematch',200);
+  App.go('weak');await wait(400);await drive('weakspots',260);
+  Meta.startDaily();await wait(400);await drive('daily',120);
+  // story campaign: all chapters (force unlock to test each)
+  window.QATRACE=true;
+  for(let c=0;c<STORY.length;c++){S.story.ch=Math.max(S.story.ch,c);Story.start(c);await wait(300);await drive('story'+(c+1),320)}
+  window.QATRACE=false;
+  log('story progress ch='+S.story.ch+' done='+S.story.done+' choirAch='+!!S.ach.storyDone);
+  // HTML modes
+  App.go('blitz','acr');await wait(200);for(let i=0;i<20;i++){const o=P().querySelector('.opt');if(o)o.click();await wait(300)}overflow('blitz');App.clearTimers();Modes.blitzEnd();overflow('blitz-end');
+  App.go('blitz','port');await wait(200);overflow('portblitz');Modes.blitzEnd();
+  App.go('exam');await wait(200);overflow('exam-menu');
+  Modes.examStart('quick');await wait(600);overflow('quiz');for(let i=0;i<15;i++){Modes.exAns(i%4);Modes.exGo(i+1);await wait(20)}Modes.exReview();overflow('review');Modes.submitExam();await wait(200);overflow('quiz-result');
+  Modes.examStart('full');await wait(600);overflow('fullexam-pbq');
+  for(let i=0;i<Modes.EX.items.length;i++){Modes.exGo(i);await wait(15);if(Modes.EX.items[i].k==='q')Modes.exAns(0);else{for(let k=0;k<12;k++){if(!(await step()))break;await wait(15)}}}
+  Modes.exReview();overflow('full-review');Modes.submitExam();await wait(300);log('exam history n='+S.exams.length+' kinds='+S.exams.map(e=>e.kind).join(','));
+  App.go('lab');await wait(200);await drive('pbqlab',300,'.result');
+  App.go('flash','all');await wait(200);for(let i=0;i<24;i++){Modes.flashFlip();Modes.flashGrade(i%3!==0);await wait(20)}overflow('flash');
+  App.go('heat');await wait(200);overflow('heat');
+  for(const t of ['acr','port','q','star','miss','pbq']){Modes.CX.tab=t;App.go('codex');await wait(350);overflow('codex-'+t)}
+  App.go('profile');await wait(200);log('profile scroll height='+P().scrollHeight+' client='+P().clientHeight+' hint='+(document.getElementById('moreHint')?.className||'none'));
+  App.go('plan');await wait(200);overflow('plan-empty');S.plan.date=(()=>{const d=new Date();d.setDate(d.getDate()+21);return d.toISOString().slice(0,10)})();App.go('plan');await wait(200);overflow('plan');
+  App.go('packet');await wait(300);const pk=App.scene('Packet');if(pk){pk.start();await wait(3000);pk.finish()}await wait(200);overflow('packet');
+  App.go('handle',{change:true,back:'profile'});await wait(400);overflow('handle');
+  // settings, pause, tutorial
+  App.go('world');await wait(300);UI.settings();await wait(100);log('settings modal='+!!document.querySelector('.mbox.settings'));UI._modal&&UI._modal();
+  Meta.tutorial();await wait(100);log('tutorial modal='+!!document.querySelector('.tutbox'));UI._modal&&UI._modal();
+  App.go('battle',1);await wait(500);Meta.pause();await wait(100);log('pause modal='+!!document.querySelector('.pausebox'));UI._modal&&UI._modal();
+  // themes + outfits
+  S.xp=99999;for(const t of THEMES){S.theme=t.id;applyTheme();await wait(50)}S.theme='classic';applyTheme();
+  for(const o of OUTFITS){if(outfitUnlocked(o))Modes.equip(o.id)}
+  // export / import round trip
+  const before=JSON.stringify(S),code=Meta.exportCode();let back;try{back=Meta.parseCode(code)}catch(e){log('BUG export/import: '+e.message)}
+  log('export code length='+code.length+' roundtrip='+(back&&JSON.stringify(back)===before));
+  try{Meta.parseCode(code.slice(0,-10));log('BUG truncated code accepted')}catch(e){log('ok truncated code rejected')}
+  // reset keeps handle
+  resetSave();log('reset keeps handle='+(S.handle==='qa_tester')+' xp='+S.xp);
+  // data checks
+  const bad=Q.filter(q=>!q.o||!q.w||q.w.length!==4||q.a.length!==4||new Set(q.a).size!==4);log('questions='+Q.length+' missing tags/whys or dup answers='+bad.length+(bad.length?' ids '+bad.slice(0,10).map(q=>q.id).join(','):''));
+  log('EXPL_WARN '+JSON.stringify(EXPL_WARN));
+  log('ach='+ACH.length+' outfits='+OUTFITS.length+' sims='+SIMS.length);
+  document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`);
+}
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QAERR.push('HARNESS '+e.message+' '+e.stack);document.body.insertAdjacentHTML('beforeend',`<pre id="qaout">${(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')}</pre>`)}),500));
+</script>
+</body></html>

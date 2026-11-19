@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Security+ Quest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="hud"></header>
+  <div id="gameWrap"><div id="game"></div></div>
+  <main id="panel" aria-live="polite"><div class="term">&gt; booting security+ quest...<span class="cursor">&#9608;</span></div></main>
+</div>
+<div id="toasts"></div>
+
+<!-- Game engine: Phaser 3 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+
+<!-- Data -->
+<script src="js/questions.js"></script>
+<script src="js/objectives.js"></script>
+<script src="js/explain/d1.js"></script>
+<script src="js/explain/d2.js"></script>
+<script src="js/explain/d3.js"></script>
+<script src="js/explain/d4.js"></script>
+<script src="js/explain/d5.js"></script>
+<script src="js/explain/d6.js"></script>
+<script src="js/pbq.js"></script>
+<script src="js/sims.js"></script>
+
+<!-- Core -->
+<script src="js/state.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/themes.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/bosses.js"></script>
+<script src="js/minions.js"></script>
+
+<!-- Phaser scenes -->
+<script src="js/scenes/boot.js"></script>
+<script src="js/scenes/world.js"></script>
+<script src="js/scenes/battle.js"></script>
+<script src="js/scenes/packet.js"></script>
+
+<!-- HTML modes and startup -->
+<script src="js/modes.js"></script>
+<script src="js/exam.js"></script>
+<script src="js/meta.js"></script>
+<script src="js/plan.js"></script>
+<script src="js/campaign.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
