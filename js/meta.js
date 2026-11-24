@@ -79,14 +79,11 @@ const Meta={
     if(got.length){
       const lvlBefore=level();S.xp+=ACH_XP*got.length;
       try{localStorage.setItem(SAVE_KEY,JSON.stringify(S))}catch(e){}
-      if(got.length>2)UI.toast(`${got.length} achievements unlocked. +${ACH_XP*got.length} XP`,'gold');
-      else got.forEach(a=>UI.toast(`Achievement unlocked: ${a.name}. +${ACH_XP} XP`,'gold'));
-      sfx.hack();
-      OUTFITS.filter(o=>o.req.ach&&got.some(a=>a.id===o.req.ach)).forEach(o=>UI.toast(`New outfit unlocked: ${o.name}`,'gold'));
-      if(level()>lvlBefore)UI.toast(`Level up! You are now ${rank()}`,'gold');
+      // Announcements (achievements, skins, themes, level-ups, chapters) are pop-ups now: see unlocks.js.
       if(typeof App!=='undefined'&&App.game)App.hud();
     }
     Meta._busy=false;
+    if(typeof Unlocks!=='undefined')Unlocks.scan();   // queue a pop-up for anything newly unlocked
   },
 
   // ---------- daily login streak + daily challenge ----------

@@ -106,8 +106,10 @@ class BattleScene extends Phaser.Scene{
       :this.add.image(x0,GROUND,monsterTex(this,en.name,en.color,en.boss)).setScale(en.boss?2:1.45).setOrigin(.5,1);
     if(this.foeAnim)FX.glow(this.foe,this.foeAcc,isBoss?2:1.5);
     this.foeShadow.setScale(isBoss?1.3:isMin?.8:1);
-    this.tweens.add({targets:this.foe,x:FOE_X,duration:first?0:600,ease:'Back.out',onComplete:()=>{
-      this.foeIdle=this.tweens.add({targets:this.foe,y:GROUND-8,duration:800,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    const foe=this.foe;
+    this.tweens.add({targets:foe,x:FOE_X,duration:first?0:600,ease:'Back.out',onComplete:()=>{
+      // the foe can be beaten before it finishes sliding in; only start its idle bob if it is still here
+      if(this.foe===foe&&foe.active)this.foeIdle=this.tweens.add({targets:foe,y:GROUND-8,duration:800,yoyo:true,repeat:-1,ease:'Sine.inOut'});
     }});
     if(en.boss&&!first)this.banner(`BOSS: ${en.name}`,en.color);
     this.drawBars();

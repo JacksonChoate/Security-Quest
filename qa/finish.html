@@ -7,19 +7,20 @@
 window.QA=[];window.QAERR=[];window.QA_TIMER_LOOP=true;   // real game loop under virtual time
 window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno+(e.error&&e.error.stack?' :: '+e.error.stack.split('\n').slice(1,4).map(s=>s.trim()).join(' | '):'')));
 window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
-const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,3).join(' | '):String(x)).join(' '));_ce.apply(console,a)};
+const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,12).join(' | '):String(x)).join(' '));_ce.apply(console,a)};
 if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="position:fixed;inset:0 0 auto;z-index:99;margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
 try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:true}))}catch(e){}
 </script>
 </head><body>
 <div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js" crossorigin="anonymous"></script>
+<script>setInterval(()=>{const b=document.querySelector(".unlockmodal [data-u=close]");if(b)b.click()},300)   // close unlock pop-ups like a player</script>
 <script src="js/questions.js"></script><script src="js/objectives.js"></script>
 <script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
 <script src="js/pbq.js"></script><script src="js/sims.js"></script>
 <script src="js/state.js"></script><script src="js/audio.js"></script><script src="js/themes.js"></script><script src="js/ui.js"></script><script src="js/fx.js"></script><script src="js/bosses.js"></script><script src="js/minions.js"></script>
 <script src="js/scenes/boot.js"></script><script src="js/scenes/world.js"></script><script src="js/scenes/battle.js"></script><script src="js/scenes/packet.js"></script>
-<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/main.js"></script>
+<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/unlocks.js"></script><script src="js/main.js"></script>
 <script>
 // ---- Finish every mode normally, return to the map, and check the map is healthy ----
 const log=(...a)=>QA.push(a.join(' '));
@@ -68,6 +69,7 @@ async function backToMap(){
 }
 // Health of the map after returning.
 async function mapCheck(tag){
+  for(let i=0;i<40&&(Unlocks.open||Unlocks.queue.length);i++)await wait(250);   // a queued unlock pop-up legitimately pauses the map
   const errs=QAERR.splice(0),w=App.game.scene.getScene('World'),probs=[];
   if(App.mode!=='world')probs.push('mode='+App.mode);
   if(st('World')!==5)probs.push('World status '+st('World'));
@@ -83,13 +85,18 @@ async function mapCheck(tag){
     if(!moved){const x1=pl.x;await holdKey('KeyA',65,'a',700);moved=Math.abs(pl.x-x1)>5}
     if(!moved)probs.push('player did not move with WASD');
   }else probs.push('no player sprite');
-  errs.forEach(e=>probs.push('console: '+e.slice(0,200)));
+  errs.forEach(e=>probs.push('console: '+e.slice(0,e.includes('Game loop')?2000:200)));
+  if(probs.length&&window.QAEV)probs.push('recent: '+QAEV.slice(-10).join(' > '));
   log(`${probs.length?'FAIL':'PASS'} ${tag} -> map @${innerWidth}x${innerHeight}${probs.length?' :: '+probs.join(' || '):''}`);
 }
 async function run(){
   for(let i=0;i<60&&!App.mode;i++)await wait(250);
   if(App.mode==='handle'){await wait(400);const inp=document.getElementById('hsInput');inp.value='qa_tester';document.getElementById('hsForm').requestSubmit();await wait(700)}
   if(UI._modal)UI._modal();
+  // event trace for diagnosing pause/resume problems
+  window.QAEV=[];const ev=s=>{QAEV.push(s+'@'+App.mode);if(QAEV.length>60)QAEV.shift()};
+  {const sm=App.game.scene;for(const fn of ['pause','resume','start','stop']){const o=sm[fn].bind(sm);sm[fn]=(k,...a)=>{ev(fn+':'+(typeof k==='string'?k:k&&k.sys&&k.sys.settings.key));return o(k,...a)}}
+   const os=Unlocks.show,oc=Unlocks.close;Unlocks.show=it=>{ev('show:'+it.key);return os(it)};Unlocks.close=()=>{ev('close:'+(Unlocks.open&&Unlocks.open.key)+':paused='+Unlocks.paused);return oc()}}
   Settings.motion=false;Meta.applyPrefs();   // play with full effects, like a normal player
   await wait(500);await mapCheck('boot');
 

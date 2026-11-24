@@ -42,12 +42,15 @@ const App={
       const token=this._goToken=(this._goToken||0)+1,data=mode==='battle'?{d:arg}:{};
       setTimeout(()=>{
         if(this._goToken!==token||this.mode!==mode)return;
+        // A newly equipped skin: rebuild the hacker sprite sheet while no scene is using it.
+        if(this.needHacker){this.needHacker=false;this.game.scene.stop(key);buildHacker(this.game.textures,this.game.anims)}
         this.game.scene.start(key,data);this.game.scene.bringToTop(key);   // the current screen always draws on top
       },40);
     }else{
       wrap.hidden=true;
       if(mode==='blitz')Modes.blitz(arg);else Modes[mode](arg);
     }
+    if(typeof Unlocks!=='undefined')setTimeout(()=>Unlocks.pump(),700);   // show waiting unlock pop-ups on the new screen
     document.body.dataset.mode=mode;
     this.hud();window.scrollTo(0,0);
   },

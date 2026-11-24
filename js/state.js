@@ -86,7 +86,7 @@ const RANKS=["Intern","Help Desk Hero","Junior Analyst","SOC Analyst","Senior An
 function level(){return Math.floor(Math.sqrt(S.xp/60))+1}
 function lvlXp(l){return 60*(l-1)*(l-1)}
 function rank(){return RANKS[Math.min(RANKS.length-1,level()-1)]}
-function addXp(n){const before=level();S.xp+=Math.round(n);save();if(typeof App!=='undefined'&&App.game)App.hud();const up=level()>before;if(up&&typeof UI!=='undefined')UI.toast(`Level up! You are now ${rank()}`,'gold');return up}
+function addXp(n){const before=level();S.xp+=Math.round(n);save();if(typeof App!=='undefined'&&App.game)App.hud();return level()>before}   // level-up announcements are pop-ups (unlocks.js)
 
 // Sound and music live in audio.js.
 

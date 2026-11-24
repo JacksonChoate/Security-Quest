@@ -49,6 +49,7 @@ async function run(){
   F=document.createElement('iframe');F.style.width='1366px';F.style.height='768px';
   F.src='../index.html?qa-timer-loop=1';document.body.appendChild(F);
   await new Promise(r=>F.onload=r);hook();
+  setInterval(()=>{const b=W.document.querySelector('.unlockmodal [data-u=close]');if(b)b.click()},300);   // close unlock pop-ups like a player
   for(let i=0;i<80&&!(X('App')&&X('App').mode);i++)await wait(250);
   if(X('App').mode==='handle'){for(let i=0;i<40;i++){const fm=W.document.getElementById('hsForm');if(fm&&!fm.hidden)break;await wait(250)}const inp=W.document.getElementById('hsInput');inp.value='qa_resize';W.document.getElementById('hsForm').requestSubmit();await wait(900)}
   if(X('UI')._modal)X('UI')._modal();

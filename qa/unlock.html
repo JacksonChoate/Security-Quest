@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<base href="../">
+<meta name="qa-sizes" content="1366x768,390x844">
+<link rel="stylesheet" href="style.css">
+<script>
+window.QA=[];window.QAERR=[];window.QA_TIMER_LOOP=true;   // real game loop under virtual time
+window.addEventListener('error',e=>QAERR.push('ERROR '+(e.message||e)+' @'+(e.filename||'').split('/').pop()+':'+e.lineno+(e.error&&e.error.stack?' :: '+e.error.stack.split('\n').slice(1,4).map(s=>s.trim()).join(' | '):'')));
+window.addEventListener('unhandledrejection',e=>QAERR.push('REJECT '+(e.reason&&e.reason.message||e.reason)));
+const _ce=console.error;console.error=(...a)=>{QAERR.push('console.error '+a.map(x=>x&&x.stack?x.stack.split('\n').slice(0,3).join(' | '):String(x)).join(' '));_ce.apply(console,a)};
+if(!/[?&]run=1/.test(location.search)){document.addEventListener('DOMContentLoaded',()=>document.body.insertAdjacentHTML('afterbegin','<p style="position:fixed;inset:0 0 auto;z-index:99;margin:0;padding:12px 16px;background:#ff2e63;color:#000;font:15px sans-serif">Test page not started: it clears saved progress, so run it with qa/run-tests.ps1 (which uses a separate browser profile).</p>'));throw new Error('QA page opened directly; refusing to clear saved progress.');}
+try{localStorage.clear();localStorage.setItem('secplus-quest-settings',JSON.stringify({music:.5,sfx:.7,muted:true,motion:true}))}catch(e){}
+</script>
+</head><body>
+<div id="app"><header id="hud"></header><div id="gameWrap"><div id="game"></div></div><main id="panel" aria-live="polite"></main></div><div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js" crossorigin="anonymous"></script>
+<script src="js/questions.js"></script><script src="js/objectives.js"></script>
+<script src="js/explain/d1.js"></script><script src="js/explain/d2.js"></script><script src="js/explain/d3.js"></script><script src="js/explain/d4.js"></script><script src="js/explain/d5.js"></script><script src="js/explain/d6.js"></script>
+<script src="js/pbq.js"></script><script src="js/sims.js"></script>
+<script src="js/state.js"></script><script src="js/audio.js"></script><script src="js/themes.js"></script><script src="js/ui.js"></script><script src="js/fx.js"></script><script src="js/bosses.js"></script><script src="js/minions.js"></script>
+<script src="js/scenes/boot.js"></script><script src="js/scenes/world.js"></script><script src="js/scenes/battle.js"></script><script src="js/scenes/packet.js"></script>
+<script src="js/modes.js"></script><script src="js/exam.js"></script><script src="js/meta.js"></script><script src="js/plan.js"></script><script src="js/campaign.js"></script><script src="js/unlocks.js"></script><script src="js/main.js"></script>
+<script>
+// ---- Unlock pop-ups: every type, queueing, equip, pause/resume, no interruptions, shown once ----
+const log=(...a)=>QA.push(a.join(' '));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const P=()=>document.getElementById('panel');
+const vis=el=>el&&!el.disabled&&!el.hidden&&el.offsetParent!==null;
+const st=k=>{const s=App.game.scene.getScene(k);return s?s.sys.settings.status:'none'};   // 5 running, 6 paused
+const res=(ok,tag,extra)=>log(`${ok?'PASS':'FAIL'} ${tag}${extra?': '+extra:''}`);
+const box=()=>document.querySelector('.unlockmodal .unlockbox');
+function keyEv(type,code,keyCode,key,target){const e=new KeyboardEvent(type,{key,code,bubbles:true,cancelable:true});Object.defineProperty(e,'keyCode',{get:()=>keyCode});Object.defineProperty(e,'which',{get:()=>keyCode});(target||window).dispatchEvent(e)}
+async function holdKey(code,kc,key,ms){keyEv('keydown',code,kc,key);await wait(ms);keyEv('keyup',code,kc,key);await wait(60)}
+async function waitFor(fn,ms){for(let t=0;t<(ms||6000);t+=100){if(fn())return true;await wait(100)}return false}
+async function mapOk(tag){
+  const probs=[],errs=QAERR.splice(0);
+  if(App.mode!=='world')probs.push('mode='+App.mode);
+  if(st('World')!==5)probs.push('World status '+st('World'));
+  const f0=App.game.loop.frame;await wait(800);if(App.game.loop.frame<=f0)probs.push('game loop stopped');
+  const w=App.game.scene.getScene('World'),pl=w&&w.player;
+  if(pl){const x0=pl.x;await holdKey('KeyD',68,'d',700);let mv=Math.abs(pl.x-x0)>5;if(!mv){const x1=pl.x;await holdKey('KeyA',65,'a',700);mv=Math.abs(pl.x-x1)>5}if(!mv)probs.push('player did not move')}else probs.push('no player');
+  const cv=App.game.canvas.getBoundingClientRect(),fr=document.getElementById('game').getBoundingClientRect();
+  if(Math.abs(cv.width-fr.width)>3||Math.abs(cv.height-fr.height)>3)probs.push('canvas does not fill its frame');
+  errs.forEach(e=>probs.push('console: '+e.slice(0,180)));
+  res(!probs.length,tag,probs.join(' || '));
+}
+// Close every pop-up that shows up, one by one, recording what was shown. How = 'enter' | 'esc' | 'click' (rotates).
+async function drain(label,opts){
+  opts=opts||{};const shown=[],probs=[];let k=0;
+  for(let n=0;n<20;n++){
+    if(!(await waitFor(()=>box(),opts.first&&n===0?6000:2500)))break;
+    await wait(150);
+    if(document.querySelectorAll('.unlockmodal').length!==1)probs.push(document.querySelectorAll('.unlockmodal').length+' pop-ups stacked');
+    const it=Unlocks.open;shown.push(it.key);
+    const b=box(),head=b.querySelector('.uhead').textContent,name=b.querySelector('.uname').textContent,prev=b.querySelector('.uprev,.tprev,.ubadge');
+    if(!head.trim().startsWith('>'))probs.push(it.key+': no typed header');
+    if(!name)probs.push(it.key+': no name');if(!prev)probs.push(it.key+': no preview');
+    if(!b.querySelector('#unlDesc').textContent)probs.push(it.key+': no description');
+    const eq=!!b.querySelector('[data-u=equip]');if(eq!==(it.type==='skin'||it.type==='theme'))probs.push(it.key+': EQUIP button '+(eq?'shown':'missing'));
+    if(opts.scene&&st(opts.scene)!==6)probs.push(it.key+': '+opts.scene+' not paused while open (status '+st(opts.scene)+')');
+    if(opts.equip&&opts.equip===it.key){b.querySelector('[data-u=equip]').click()}
+    else{const how=['enter','esc','click'][k++%3];
+      if(how==='enter')keyEv('keydown','Enter',13,'Enter',document);else if(how==='esc')keyEv('keydown','Escape',27,'Escape',document);else b.querySelector('[data-u=close]').click()}
+    await wait(120);
+    if(box()&&Unlocks.open&&Unlocks.open.key===it.key)probs.push(it.key+': did not close');
+  }
+  return {shown,probs};
+}
+async function playBattleToEnd(checkNoPopup){
+  let early=0;
+  for(let i=0;i<400;i++){
+    const sc=App.scene('Battle');if(P().querySelector('.result'))break;
+    if(checkNoPopup&&box()&&sc&&!sc.B.over)early++;
+    let b=[...P().querySelectorAll('#contBtn,#sCont,[data-sim=cont],#pbqCont')].find(vis);
+    if(!b){const q=sc&&sc.B.cur;const opts=[...P().querySelectorAll('.opt')].filter(vis);b=q&&opts.find(o=>o.children[1]&&o.children[1].textContent===q.a[0])||opts[0]}
+    if(!b){const ck=[...P().querySelectorAll('[data-sim=check],#pbqCheck')].find(vis);if(ck){ck.click();await wait(80);continue}
+      const l=[...P().querySelectorAll('.mi[data-l]')].find(x=>vis(x)&&!x.querySelector('i'));if(l){l.click();await wait(20);const r=[...P().querySelectorAll('.mi[data-r]')].find(x=>vis(x)&&!x.classList.contains('used'));r&&r.click()}
+      const o=[...P().querySelectorAll('.pool .mi[data-i],.simq:not(:has(.mi.sel)) .mi,[data-add],.pitem:not(.flagged)')].find(vis);o&&o.click()}
+    else b.click();
+    await wait(90);
+  }
+  return early;
+}
+async function run(){
+  for(let i=0;i<60&&!App.mode;i++)await wait(250);
+  if(App.mode==='handle'){await waitFor(()=>{const f=document.getElementById('hsForm');return f&&!f.hidden});const inp=document.getElementById('hsInput');inp.value='qa_unlock';document.getElementById('hsForm').requestSubmit();await wait(900)}
+  // The first-run tutorial opens a moment after the handle screen; close it like a player would.
+  if(await waitFor(()=>document.querySelector('.tutbox'),4000)){const s=document.querySelector('.tutbox [data-a=skip]');s?s.click():UI._modal&&UI._modal()}
+  if(UI._modal)UI._modal();
+  Settings.motion=false;Settings.muted=false;Meta.applyPrefs();Sound.apply();
+  await waitFor(()=>App.mode==='world'&&st('World')===5);await wait(500);
+
+  // 1. Nothing pops up for starting items (default skin, free themes, level 1)
+  res(!(await waitFor(()=>box(),3000)),'no pop-ups for things you start with',Object.keys(S.unl||{}).length+' starting items marked as seen');
+
+  // 2. Level up twice at once on the map: rank, skin and theme pop-ups, one at a time, map paused while open
+  addXp(lvlXp(3)-S.xp);
+  let r=await drain('level 3',{first:true,scene:'World'});
+  const want=['lvl:2','lvl:3','skin:stealth','skin:ice','theme:ice'];
+  res(!r.probs.length&&want.every(k=>r.shown.includes(k))&&r.shown.length===new Set(r.shown).size,'level-up, skin and theme pop-ups queue one after another',r.shown.join(', ')+(r.probs.length?' :: '+r.probs.join(' || '):''));
+  res(r.shown.indexOf('lvl:2')<r.shown.indexOf('skin:stealth')&&r.shown.indexOf('lvl:3')<r.shown.indexOf('theme:ice'),'rank pop-ups come before the items they unlock');
+  await mapOk('map resumes after closing with Enter, Esc and [ CLOSE ]');
+
+  // 3. [ EQUIP NOW ] on a skin (map restarts with the new sprite sheet)
+  addXp(lvlXp(4)-S.xp);r=await drain('level 4',{first:true,scene:'World',equip:'skin:crimson'});
+  await waitFor(()=>App.mode==='world'&&st('World')===5);await wait(600);
+  res(S.outfit==='crimson'&&r.shown.includes('skin:crimson'),'[ EQUIP NOW ] equips the skin','outfit='+S.outfit+' shown='+r.shown.join(','));
+  await mapOk('map runs with the newly equipped skin');
+
+  // 4. [ EQUIP NOW ] on a theme
+  addXp(lvlXp(5)-S.xp);r=await drain('level 5',{first:true,scene:'World',equip:'theme:neon'});await wait(300);
+  res(S.theme==='neon'&&document.body.dataset.theme==='neon','[ EQUIP NOW ] applies the theme','theme='+S.theme+' body='+document.body.dataset.theme);
+  await mapOk('map runs after equipping a theme');
+
+  // 5. Achievement earned mid-battle waits until the battle is over
+  App.go('battle',1);await waitFor(()=>P().querySelector('.opt'),8000);
+  S.bestRun=10;save();   // earns "On a Roll" (10 in a row) mid-question
+  const early=await playBattleToEnd(true);
+  res(early===0,'no pop-up while a question is pending',early+' pop-up sightings before the battle ended');
+  r=await drain('after battle',{first:true,scene:'Battle'});
+  res(r.shown.includes('ach:run10')&&!r.probs.length,'achievement pop-up appears once the battle ends',r.shown.join(', ')+(r.probs.length?' :: '+r.probs.join(' || '):''));
+  res(!!P().querySelector('.result'),'battle results are still there after closing the pop-ups');
+  [...P().querySelectorAll('[data-a=map]')].forEach(b=>b.click());await waitFor(()=>App.mode==='world'&&st('World')===5);await wait(400);
+  await mapOk('map healthy after a battle with pop-ups');
+
+  // 6. Campaign chapter unlock
+  S.story.ch=Math.max(S.story.ch,1);save();r=await drain('chapter',{first:true,scene:'World'});
+  res(r.shown.includes('ch:1'),'new campaign chapter pop-up',r.shown.join(', '));
+
+  // 7. Pause menu open in a battle: the pop-up waits; Esc on a pop-up closes it and does not open the pause menu
+  App.go('battle',2);await waitFor(()=>P().querySelector('.opt'),8000);Meta.pause();await wait(100);
+  S.bestRun=25;save();await wait(1800);
+  res(!box()&&!!document.querySelector('.pausebox'),'pop-up waits while the pause menu is open');
+  document.querySelector('.pausebox [data-a=quit]').click();
+  await waitFor(()=>box(),5000);
+  const escKey=Unlocks.open&&Unlocks.open.key;
+  keyEv('keydown','Escape',27,'Escape',document);await wait(150);
+  res(!!escKey&&!(Unlocks.open&&Unlocks.open.key===escKey)&&!document.querySelector('.pausebox')&&App.mode==='world','Esc closes the pop-up without opening the pause menu',escKey||'no pop-up');
+  r=await drain('leftovers',{scene:'World'});
+  await mapOk('map healthy after quitting a battle');
+
+  // 8. Reduced motion: no glitch animation; muted: the unlock sound does not break anything
+  Settings.motion=true;Settings.muted=true;Sound.apply();Meta.applyPrefs();
+  S.bestRun=50;save();await waitFor(()=>box(),5000);
+  res(!!box()&&!box().classList.contains('glitchin'),'reduced motion: pop-up appears without the glitch animation');
+  r=await drain('reduced motion',{scene:'World'});
+  Settings.motion=false;Settings.muted=false;Sound.apply();Meta.applyPrefs();
+  S.bestRun=50;save();   // already shown: nothing new
+  res(!(await waitFor(()=>box(),2000)),'the same unlock never shows twice');
+
+  // 9. Shown once, even after a reload (state reloaded from localStorage, queue emptied)
+  const seen=Object.keys(S.unl).length,stored=Object.keys(JSON.parse(localStorage.getItem(SAVE_KEY)).unl||{}).length;
+  loadSave();Unlocks.queue=[];Unlocks.scan();
+  res(stored===seen&&!(await waitFor(()=>box(),2500)),'nothing re-appears after reloading the save',seen+' unlocks remembered');
+  await mapOk('final map check');
+
+  App.game.loop.stop();document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>');
+}
+if(/[?&]run=1/.test(location.search))window.addEventListener('load',()=>setTimeout(()=>run().catch(e=>{QA.push('HARNESS '+e.message+' '+e.stack);App.game&&App.game.loop.stop();document.body.insertAdjacentHTML('beforeend','<pre id="qaout">'+(QAERR.concat(['---'],QA)).join('\n').replace(/</g,'&lt;')+'</pre>')}),500));
+</script>
+</body></html>
